@@ -10,12 +10,6 @@ import cv2
 from copy import deepcopy
 
 class QNetwork(nn.Module):
-    LENGTH_RAY = 70
-    N_RAYS = 5
-    N_ACTIONS = 5
-    EPSILON_MIN = 0.1  # Minimum exploration (10% random)
-    EPSILON_DECAY = 0.995
-    GAMMA = 0.95
 
     def __init__(self, device=torch.device('cpu'), n_rays=5, len_ray=70, lr=0.0003, gamma=0.95, epsilon_decay=0.95, min_epsilon=0.05):
         super(QNetwork, self).__init__()
@@ -30,7 +24,7 @@ class QNetwork(nn.Module):
 
         self.MAX_SPEED = 70
         self.N_ACTIONS = 5
-        self.fc1 = nn.Linear(self.N_RAYS+1, 64) # rays+sped
+        self.fc1 = nn.Linear(self.n_rays+1, 64) # rays+sped
         self.fc2 = nn.Linear(64, 64)
         self.fc3 = nn.Linear(64, self.N_ACTIONS)
         self.optimizer = optim.Adam(self.parameters(), lr=self.lr)
@@ -60,7 +54,7 @@ class QNetwork(nn.Module):
         if terminated:
             target_q = reward_t
         else:
-            target_q = reward_t + self.GAMMA * max_next_q_values
+            target_q = reward_t + self.gamma * max_next_q_values
 
         loss = self.loss_fn(chosen_q, target_q)
         self.optimizer.zero_grad()
@@ -71,15 +65,15 @@ class QNetwork(nn.Module):
 
 
     def train_agent(self, n_epochs=100, train_seeds=20, val_seeds=5):
-        best_val_reward = float('inf')
-        best_model_state = None
+        best_val_reward = float('-inf')
+        best_model_state = deepcopy(self.state_dict())
         for epoch in range(n_epochs):
             self.train()
-            epsilon = min(self.min_epsilon, self.epsilon_decay ** epoch)
+            epsilon = max(self.min_epsilon, self.epsilon_decay ** epoch)
             train_reward = 0
             for seed in range(train_seeds):
                 obs, info = self.env.reset(seed=seed)
-                readings = radar.get_radar_readings(obs, self.N_RAYS, self.LENGTH_RAY) / self.LENGTH_RAY
+                readings = radar.get_radar_readings(obs, self.n_rays, self.len_ray) / self.len_ray
                 speed = self.env.unwrapped.car.hull.linearVelocity.length / self.MAX_SPEED
                 readings = np.append(readings, speed)
                 terminated = False
@@ -109,7 +103,7 @@ class QNetwork(nn.Module):
 
             self.eval()
             val_reward = 0
-            for seed in range(val_seeds):
+            for seed in range(train_seeds, train_seeds+val_seeds):
                 obs, info = self.env.reset(seed=seed)
                 readings = radar.get_radar_readings(obs, self.n_rays, self.len_ray) / self.len_ray
                 speed = self.env.unwrapped.car.hull.linearVelocity.length / self.MAX_SPEED
@@ -124,9 +118,9 @@ class QNetwork(nn.Module):
                         action = q_values.argmax().item()
 
                     obs, reward, terminated, truncated, info = self.env.step(action)
-                    next_readings = radar.get_radar_readings(obs, self.n_rays, self.len_ray) / self.len_ray
-                    next_speed = self.env.unwrapped.car.hull.linearVelocity.length / self.MAX_SPEED
-                    readings = np.append(next_readings, next_speed)
+                    readings = radar.get_radar_readings(obs, self.n_rays, self.len_ray) / self.len_ray
+                    speed = self.env.unwrapped.car.hull.linearVelocity.length / self.MAX_SPEED
+                    readings = np.append(readings, speed)
                     val_reward += reward
 
                     if epoch % 20 == 0:
@@ -155,25 +149,21 @@ class QNetwork(nn.Module):
         readings = radar.get_radar_readings(obs, self.n_rays, self.len_ray) / self.len_ray
         speed = self.env.unwrapped.car.hull.linearVelocity.length / self.MAX_SPEED
         readings = np.append(readings, speed)
-        print(readings)
         terminated = False
         truncated = False
         total_reward = 0
 
         while not (terminated or truncated):
-            if np.random.rand() < 0.2:
-                action = 3
-            else:
-                state_tensor = torch.tensor(np.array([readings]), dtype=torch.float32).to(self.device)
-                with torch.no_grad():
-                    q_values = self.forward(state_tensor)
-                    action = q_values.argmax().item()  # Use torch argmax
-                    print(action)
+            state_tensor = torch.tensor(np.array([readings]), dtype=torch.float32).to(self.device)
+            with torch.no_grad():
+                q_values = self.forward(state_tensor)
+                action = q_values.argmax().item()  # Use torch argmax
+
 
             obs, reward, terminated, truncated, info = self.env.step(action)
-            next_readings = radar.get_radar_readings(obs, self.n_rays, self.len_ray) / self.len_ray
-            next_speed = self.env.unwrapped.car.hull.linearVelocity.length / self.MAX_SPEED
-            readings = np.append(next_readings, next_speed)
+            readings = radar.get_radar_readings(obs, self.n_rays, self.len_ray) / self.len_ray
+            speed = self.env.unwrapped.car.hull.linearVelocity.length / self.MAX_SPEED
+            readings = np.append(readings, speed)
             total_reward += reward
 
             cv2.imshow("Game", obs)

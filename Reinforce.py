@@ -6,27 +6,29 @@ import gymnasium as gym
 import radar_wrapper as radar
 import numpy as np
 import cv2
-from ReplayBuffer import ReplayBuffer
-import os
-from QNetwork import QNetwork
+from copy import deepcopy
 
 
 class REINFORCE(nn.Module):
-    LENGTH_RAY = 70
-    N_RAYS = 5
-    N_ACTIONS = 5
-    GAMMA = 0.999
-    BETA = 0.01
 
-    def __init__(self, device=torch.device('cpu')):
+    def __init__(self, device=torch.device('cpu'), n_rays=5, len_ray=70, lr=0.0003, gamma=0.95):
         super(REINFORCE, self).__init__()
-        self.fc1 = nn.Linear(self.N_RAYS, 64)
+
+        self.device = device
+        self.n_rays = n_rays
+        self.len_ray = len_ray
+        self.lr = lr
+        self.gamma = gamma
+
+        self.MAX_SPEED = 70
+        self.N_ACTIONS = 5
+        self.fc1 = nn.Linear(self.N_RAYS+1, 64) # rays+sped
         self.fc2 = nn.Linear(64, 64)
         self.fc3 = nn.Linear(64, self.N_ACTIONS)
-        self.optimizer = optim.Adam(self.parameters(), lr=0.001)
+        self.optimizer = optim.Adam(self.parameters(), lr=self.lr)
         self.loss_fn = nn.MSELoss()
-        self.to(device)
-        self.device = device
+        self.to(self.device)
+        self.env = gym.make("CarRacing-v3", render_mode="rgb_array", domain_randomize=False, continuous=False)
 
     def forward(self, x):
         # Pass input through layers with ReLU activation
@@ -42,8 +44,8 @@ class REINFORCE(nn.Module):
             R = r + self.GAMMA * R
             discounted_reward[len(rewards)-1-i] = R
 
-        returns = torch.tensor(discounted_reward, dtype=torch.float32).to(self.device)
-        returns = (returns - returns.mean()) / (returns.std() + 1e-9)
+        discounted_rewards = torch.tensor(discounted_reward, dtype=torch.float32).to(self.device)
+        discounted_rewards = (discounted_rewards - discounted_rewards.mean()) / (discounted_rewards.std() + 1e-9)
         states_tensor = torch.cat(states)
         actions_tensor = torch.stack(actions)
 
@@ -53,8 +55,7 @@ class REINFORCE(nn.Module):
 
         log_probs = torch.log(chosen_probs)
 
-        entropy = -(probs * torch.log(probs + 1e-8)).sum(dim=1)
-        loss = -(log_probs * returns).sum() - self.BETA * entropy.sum()
+        loss = -(log_probs * discounted_rewards).sum()
 
         self.optimizer.zero_grad()
         loss.backward()
@@ -63,80 +64,116 @@ class REINFORCE(nn.Module):
         return loss.item()
 
     def train_agent(self, epochs):
-        if os.path.exists("mlp_final.pt"):
-            print("Loading existing smart brain...")
-            self.load_state_dict(torch.load("mlp_final.pt", map_location=self.device))
-        else:
-            print("Starting from scratch...")
+        best_val_reward = float('-inf')
+        best_model_state = deepcopy(self.q_table)
 
-        env = gym.make("CarRacing-v3", render_mode="rgb_array", domain_randomize=False, continuous=False)
         for epoch in range(epochs):
-            obs, info = env.reset()
-            readings = radar.get_radar_readings(obs, self.N_RAYS, self.LENGTH_RAY) / self.LENGTH_RAY
-            terminated = False
-            truncated = False
-            total_reward = 0
-            offroad_count = 0
-            states, actions, rewards = [], [], []
-            while not (terminated or truncated):
-                state_tensor = torch.tensor(np.array([readings]), dtype=torch.float32).to(self.device)
-                probs = self.forward(state_tensor)
-                dist = torch.distributions.Categorical(probs)
-                action = dist.sample().item()
-                obs, reward, terminated, truncated, info = env.step(action)
-                if all(readings < 0.1):
-                    offroad_count += 1
-                    reward = -5
-                    if offroad_count > 20:
-                        terminated = True
-                else:
-                    offroad_count = 0
-                next_readings = radar.get_radar_readings(obs, self.N_RAYS, self.LENGTH_RAY) / self.LENGTH_RAY
+            self.train()
+            train_reward = 0
+            for seed in range(train_seeds):
+                obs, info = self.env.reset(seed=seed)
+                readings = radar.get_radar_readings(obs, self.n_rays, self.len_ray) / self.len_ray
+                speed = self.env.unwrapped.car.hull.linearVelocity.length / self.MAX_SPEED
+                readings = np.append(readings, speed)
+                terminated = False
+                truncated = False
+                total_reward = 0
+                offroad_count = 0
+                states, actions, rewards = [], [], []
 
-                states.append(state_tensor)
-                actions.append(torch.tensor(action, dtype=torch.int64).to(self.device))
-                rewards.append(reward)
+                while not (terminated or truncated):
+                    state_tensor = torch.tensor(np.array([readings]), dtype=torch.float32).to(self.device)
+                    with torch.no_grad():
+                        probs = self.forward(state_tensor)
+                        dist = torch.distributions.Categorical(probs)
+                        action = dist.sample().item()
 
-                readings = next_readings
-                total_reward += reward
+                    obs, reward, terminated, truncated, info = self.env.step(action)
 
-                if epoch % 20 == 0:
-                    cv2.imshow("Game", obs)
-                    cv2.waitKey(1)
+                    readings = radar.get_radar_readings(obs, self.n_rays, self.len_ray) / self.len_ray
+                    speed = self.env.unwrapped.car.hull.linearVelocity.linearSpeed / self.MAX_SPEED
+                    readings = np.append(readings, speed)
 
-            self.training_step(states, actions, rewards)
+                    states.append(state_tensor)
+                    actions.append(torch.tensor(action, dtype=torch.int64).to(self.device))
+                    rewards.append(reward)
 
-            print(f"Epoch: {epoch} | Reward: {total_reward:.2f}")
+                    train_reward += reward
+
+                    if epoch % 20 == 0:
+                        cv2.imshow("Game", obs)
+                        cv2.waitKey(1)
+
+                loss = self.training_step(states, actions, rewards)
+
+            train_reward /= train_seeds
+
+            self.eval()
+            val_reward = 0
+            for seed in range(train_seeds, train_seeds+val_seeds):
+
+                obs, info = env.reset(seed=seed)
+                readings = radar.get_radar_readings(obs, self.n_rays, self.len_ray) / self.len_ray
+                speed = self.env.unwrapped.car.hull.linearVelocity.length / self.MAX_SPEED
+                readings = np.append(readings, speed)
+                terminated = False
+                truncated = False
+
+                while not (terminated or truncated):
+                    state_tensor = torch.tensor(np.array([readings]), dtype=torch.float32).to(self.device)
+                    with torch.no_grad():
+                        probs = self.forward(state_tensor)
+                        dist = torch.distributions.Categorical(probs)
+                        action = dist.sample().item()
+
+                    obs, reward, terminated, truncated, info = env.step(action)
+                    readings = radar.get_radar_readings(obs, self.n_rays, self.len_ray) / self.len_ray
+                    speed = self.env.unwrapped.car.hull.linearVelocity.length / self.MAX_SPEED
+                    readings = np.append(readings, speed)
+
+                    val_reward += reward
+
+                    if epoch % 20 == 0:
+                        cv2.imshow("Game", obs)
+                        cv2.waitKey(1)
+
+            val_reward /= val_seeds
+
+            print(f"Epoch: {epoch} | Train Reward: {train_reward:.2f}, Val Reward: {val_reward:.2f}")
+
+            if val_reward > best_val_reward:
+                best_val_reward = val_reward
+                best_model_state = deepcopy(self.state_dict())
 
             # save game
-            if epoch % 20 == 0 and epoch > 0:
-                torch.save(self.state_dict(), 'mlp.pt')
+            if epoch % 20 == 0:
+                torch.save(best_model_state, 'mlp.pt')
 
-        torch.save(self.state_dict(), 'mlp_final.pt')
+        torch.save(best_model_state, 'mlp_final.pt')
 
     def play(self):
         self.load_state_dict(torch.load("mlp_final.pt", map_location=self.device))
         self.eval()
-        env = gym.make("CarRacing-v3", render_mode="rgb_array", domain_randomize=False, continuous=False)
-        obs, info = env.reset()
-        readings = radar.get_radar_readings(obs, self.N_RAYS, self.LENGTH_RAY)
-        readings = readings / self.LENGTH_RAY
+        self.env = gym.make("CarRacing-v3", render_mode="rgb_array", domain_randomize=False, continuous=False)
+        obs, info = self.env.reset()
+        readings = radar.get_radar_readings(obs, self.n_rays, self.len_ray) / self.len_ray
+        speed = self.env.unwrapped.car.hull.linearVelocity.length / self.MAX_SPEED
+        readings = np.append(readings, speed)
         terminated = False
         truncated = False
         total_reward = 0
 
         while not (terminated or truncated):
             state_tensor = torch.tensor(np.array([readings]), dtype=torch.float32).to(self.device)
-            probs = self.forward(state_tensor)
-            dist = torch.distributions.Categorical(probs)
-            action = dist.sample().item()
-            print(action)
+            with torch.no_grad():
+                probs = self.forward(state_tensor)
+                dist = torch.distributions.Categorical(probs)
+                action = probs.argmax().item()
 
-            obs, reward, terminated, truncated, info = env.step(action)
-            next_readings = radar.get_radar_readings(obs, self.N_RAYS, self.LENGTH_RAY)
-
-            readings = next_readings
-            readings = readings / self.LENGTH_RAY
+            obs, reward, terminated, truncated, info = self.env.step(action)
+            readings = radar.get_radar_readings(obs, self.n_rays, self.len_ray) / self.len_ray
+            speed = self.env.unwrapped.car.hull.linearVelocity.length / self.MAX_SPEED
+            readings = np.append(readings, speed)
             total_reward += reward
 
             cv2.imshow("Game", obs)

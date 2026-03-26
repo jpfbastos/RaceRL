@@ -63,8 +63,8 @@ class QLearning:
         return readings
 
     def train(self, n_epochs=100, train_seeds=20, val_seeds=5):
-        best_val_reward = float('inf')
-        best_table = self.q_table
+        best_val_reward = float('-inf')
+        best_table = deepcopy(self.q_table)
         for epoch in range(n_epochs):
             train_reward = 0
             epsilon = max(self.min_epsilon, self.epsilon_decay ** epoch)
@@ -103,14 +103,7 @@ class QLearning:
             train_reward /= train_seeds
 
             val_reward = 0
-            for seed in range(val_seeds):
-                obs, info = self.env.reset(seed=seed)
-                readings = radar.get_radar_readings(obs, self.n_rays, self.len_ray) / self.len_ray
-                speed = self.env.unwrapped.car.hull.linearVelocity.length / self.MAX_SPEED
-                readings = np.append(readings, speed)
-                terminated = False
-                truncated = False
-
+            for seed in range(train_seeds, train_seeds+val_seeds):
                 obs, info = self.env.reset(seed=seed)
                 readings = radar.get_radar_readings(obs, self.n_rays, self.len_ray)
                 speed = self.env.unwrapped.car.hull.linearVelocity.length
