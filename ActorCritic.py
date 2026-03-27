@@ -6,152 +6,132 @@ import gymnasium as gym
 import radar_wrapper as radar
 import numpy as np
 import cv2
-import os
-import csv
+from copy import deepcopy
 
 class ActorCritic(nn.Module):
-    LENGTH_RAY = 70
-    N_RAYS = 9
-    N_ACTIONS = 5
-    GAMMA = 0.99
 
-    def __init__(self, device=torch.device('cpu')):
+    def __init__(self, device=torch.device('cpu'), n_rays=5, len_ray=70, lr=0.0003, gamma=0.95):
         super(ActorCritic, self).__init__()
-        self.fc1 = nn.Linear(self.N_RAYS+1, 64)
-        self.fc2 = nn.Linear(64, 64)
-        self.policy_head = nn.Linear(64, self.N_ACTIONS)
-        self.value_head = nn.Linear(64, 1)
-        self.optimizer = optim.Adam(self.parameters(), lr=0.0003)
-        self.loss_fn = nn.MSELoss()
-        self.to(device)
+
         self.device = device
-        self.log_file = open('training_log.csv', 'w', newline='')
-        self.logger = csv.writer(self.log_file)
-        self.logger.writerow(['epoch', 'reward', 'entropy', 'value_std', 'value_mean', 'return_mean', 'advantage_std'])
-        self.entropy_coef = 0.1
-        self.entropy_coef_decay = 0.998
+        self.n_rays = n_rays
+        self.len_ray = len_ray
+        self.lr = lr
+        self.gamma = gamma
+
+        self.MAX_SPEED = 70
+        self.N_ACTIONS = 5
+        self.fc1 = nn.Linear(self.n_rays+1, 64) # n_rays+speed
+        self.fc2 = nn.Linear(64, 64)
+        self.actor = nn.Linear(64, self.N_ACTIONS)
+        self.critic = nn.Linear(64, 1)
+        self.loss_fn = nn.MSELoss()
+        self.actor_optimizer = optim.Adam(self.parameters(), lr=self.lr)
+        self.to(self.device)
+        self.env = gym.make("CarRacing-v3", render_mode="rgb_array", domain_randomize=False, continuous=False)
+
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
-        probs = F.softmax(self.policy_head(x), dim=1)
-        value = self.value_head(x).squeeze(1)
+        probs = F.softmax(self.actor(x), dim=1)
+        value = self.critic(x).squeeze(1)
         return probs, value
 
-    def training_step(self, states, actions, rewards, dones, final_state):
-        if not len(states):
-            return
+    def training_step(self, state, action, reward, next_state, terminated):
+        state_t = torch.tensor(np.array([state]), dtype=torch.float32).to(self.device)  # Shape: [1, 5+1]
+        next_state_t = torch.tensor(np.array([next_state]), dtype=torch.float32).to(self.device)  # Shape: [1, 5+1]
 
-        states = torch.tensor(np.array(states), dtype=torch.float32, device=self.device)
-        actions = torch.tensor(actions, dtype=torch.int64, device=self.device)
-        rewards = torch.tensor(rewards, dtype=torch.float32, device=self.device)
-        dones = torch.tensor(dones, dtype=torch.float32, device=self.device)
-
-        probs, values = self.forward(states)
+        probs, value = self.forward(state_t)
         dist = torch.distributions.Categorical(probs)
-        log_probs = dist.log_prob(actions)
-        entropy = dist.entropy().mean()
+        _, next_value = self.forward(next_state_t)
 
-        returns = torch.zeros_like(rewards)
+        reward = reward + self.gamma * next_value * (1-terminated)
+        advantage = reward - value
 
-        if not dones[-1]:
-            final_state_tensor = torch.tensor(np.array([final_state]),
-                                              dtype=torch.float32, device=self.device)
-            with torch.no_grad():
-                _, final_value = self.forward(final_state_tensor)
-            next_return = final_value.squeeze()
-        else:
-            next_return = 0.0
-
-        # Calculate returns backwards
-        for t in reversed(range(len(rewards))):
-            next_return = rewards[t] + self.GAMMA * next_return * (1 - dones[t])
-            returns[t] = next_return
-
-        advantages = returns - values
-
-        actor_loss = -(log_probs * advantages.detach()).mean()
-        critic_loss = advantages.pow(2).mean()
-        loss = actor_loss + 1.0 * critic_loss - self.entropy_coef * entropy
-        self.entropy_coef *= self.entropy_coef_decay
+        actor_loss = -dist.log_prob(action)*advantage
+        critic_loss = self.loss_fn(value, reward)
 
         self.optimizer.zero_grad()
-        loss.backward()
+        actor_loss.backward()
+        critic_loss.backward()
         self.optimizer.step()
 
-        return {
-            'loss': loss.item(),
-            'actor_loss': actor_loss.item(),
-            'critic_loss': critic_loss.item(),
-            'entropy': entropy.item(),
-            'value_mean': values.mean().item(),
-            'value_std': values.std().item(),
-            'return_mean': returns.mean().item(),
-            'advantage_std': advantages.std().item(),
-        }
+        return actor_loss.item(), critic_loss.item(),
 
-    def train_agent(self, epochs):
-        if os.path.exists("mlp_final.pt"):
-            print("Loading existing smart brain...")
-            self.load_state_dict(torch.load("mlp_final.pt", map_location=self.device))
-        else:
-            print("Starting from scratch...")
-
-        env = gym.make("CarRacing-v3", render_mode="rgb_array", domain_randomize=False, continuous=False)
+    def train_agent(self, epochs, train_seeds=20, val_seeds=5):
+        best_val_reward = float('-inf')
+        best_model_state = deepcopy(self.state_dict())
 
         for epoch in range(epochs):
-            print("Epoch {}/{}".format(epoch + 1, epochs))
-            obs, info = env.reset()
-            readings = radar.get_radar_readings(obs, self.N_RAYS, self.LENGTH_RAY) / self.LENGTH_RAY
-            raw_speed = env.unwrapped.car.hull.linearVelocity.length
-            readings = np.append(readings, raw_speed / 10.0)
-            terminated = False
-            truncated = False
-            total_reward = 0
+            self.train()
+            train_reward = 0
+            for seed in range(train_seeds):
+                obs, info = self.env.reset(seed=seed)
+                readings = radar.get_radar_readings(obs, self.n_rays, self.len_ray) / self.len_ray
+                speed = self.env.unwrapped.car.hull.linearVelocity.length / self.MAX_SPEED
+                readings = np.append(readings, speed)
+                terminated = False
+                truncated = False
 
-            states_buffer = []
-            actions_buffer = []
-            rewards_buffer = []
-            dones_buffer = []
+                while not (terminated or truncated):
+                    state_tensor = torch.tensor(np.array([readings]), dtype=torch.float32).to(self.device)
+                    with torch.no_grad():
+                        action_probs, _ = self.forward(state_tensor)
+                        dist = torch.distributions.Categorical(action_probs)
+                        action = dist.sample().item()
 
-            while not (terminated or truncated):
-                state_tensor = torch.tensor(np.array([readings]), dtype=torch.float32).to(self.device)
-                probs, _ = self.forward(state_tensor)
-                dist = torch.distributions.Categorical(probs)
-                action = dist.sample().item()
+                    obs, reward, terminated, truncated, info = self.env.step(action)
 
-                obs, reward, terminated, truncated, info = env.step(action)
-                if all(readings[:-1] < 0.1):
-                    reward -= 1
-                next_readings = radar.get_radar_readings(obs, self.N_RAYS, self.LENGTH_RAY) / self.LENGTH_RAY
-                raw_speed = env.unwrapped.car.hull.linearVelocity.length
-                next_readings = np.append(next_readings, raw_speed / 10.0)
+                    next_readings = radar.get_radar_readings(obs, self.N_RAYS, self.LENGTH_RAY) / self.LENGTH_RAY
+                    speed = self.env.unwrapped.car.hull.linearVelocity.length / self.MAX_SPEED
+                    next_readings = np.append(next_readings, speed)
 
-                states_buffer.append(readings)
-                actions_buffer.append(action)
-                rewards_buffer.append(reward)
-                dones_buffer.append(terminated)
+                    metrics = self.training_step(readings, action, reward, next_readings, terminated)
 
-                readings = next_readings
-                total_reward += reward
+                    readings = next_readings
+                    train_reward += reward
 
-                if epoch % 20 == 0:
-                    cv2.imshow("Game", obs)
-                    cv2.waitKey(1)
+            train_reward /= train_seeds
 
-            metrics = self.training_step(states_buffer, actions_buffer, rewards_buffer, dones_buffer, readings)
+            self.eval()
+            val_reward = 0
+            for seed in range(train_seeds, train_seeds+val_seeds):
+                obs, info = self.env.reset(seed=seed)
+                readings = radar.get_radar_readings(obs, self.n_rays, self.len_ray) / self.len_ray
+                speed = self.env.unwrapped.car.hull.linearVelocity.length / self.MAX_SPEED
+                readings = np.append(readings, speed)
+                terminated = False
+                truncated = False
 
-            if metrics:
-                self.logger.writerow([epoch, total_reward, metrics['entropy'],
-                                      metrics['value_std'], metrics['value_mean'],
-                                      metrics['return_mean'], metrics['advantage_std']])
-                self.log_file.flush()
+                while not (terminated or truncated):
+                    state_tensor = torch.tensor(np.array([readings]), dtype=torch.float32).to(self.device)
+                    with torch.no_grad():
+                        probs, _ = self.forward(state_tensor)
+                        action = probs.argmax().item()
 
-            # save game
-            if epoch % 20 == 0 and epoch > 0:
-                torch.save(self.state_dict(), 'mlp.pt')
+                    obs, reward, terminated, truncated, info = env.step(action)
+                    readings = radar.get_radar_readings(obs, self.n_rays, self.len_ray) / self.len_ray
+                    speed = self.env.unwrapped.car.hull.linearVelocity.length / self.MAX_SPEED
+                    readings = np.append(readings, speed)
+                    val_reward += reward
 
-        torch.save(self.state_dict(), 'mlp_final.pt')
+                    if epoch % 20 == 0:
+                        cv2.imshow("Game", obs)
+                        cv2.waitKey(1)
+
+            val_reward /= val_seeds
+
+            print(f"Epoch: {epoch} | Train Reward: {train_reward:.2f}, Val Reward: {val_reward:.2f}")
+
+            if val_reward > best_val_reward:
+                best_val_reward = val_reward
+                best_model_state = deepcopy(self.state_dict())
+
+            if epoch % 20 == 0:
+                torch.save(best_model_state, 'a2c.pt')
+
+        torch.save(best_model_state, 'a2c_final.pt')
 
     def play(self):
         self.load_state_dict(torch.load("mlp_final.pt", map_location=self.device))
@@ -166,15 +146,14 @@ class ActorCritic(nn.Module):
 
         while not (terminated or truncated):
             state_tensor = torch.tensor(np.array([readings]), dtype=torch.float32).to(self.device)
-            probs, _ = self.forward(state_tensor)
-            dist = torch.distributions.Categorical(probs)
-            action = dist.sample().item()
-            print(action)
+            with torch.no_grad():
+                probs, _ = self.forward(state_tensor)
+                action = probs.argmax().item()
 
-            obs, reward, terminated, truncated, info = env.step(action)
-            next_readings = radar.get_radar_readings(obs, self.N_RAYS, self.LENGTH_RAY) / self.LENGTH_RAY
-            next_readings = np.append(next_readings, env.unwrapped.car.hull.linearVelocity.length / 10)
-            readings = next_readings
+            obs, reward, terminated, truncated, info = self.env.step(action)
+            readings = radar.get_radar_readings(obs, self.n_rays, self.len_ray) / self.len_ray
+            speed = self.env.unwrapped.car.hull.linearVelocity.length / self.MAX_SPEED
+            readings = np.append(readings, speed)
             total_reward += reward
 
             cv2.imshow("Game", obs)

@@ -63,9 +63,9 @@ class REINFORCE(nn.Module):
 
         return loss.item()
 
-    def train_agent(self, epochs):
+    def train_agent(self, epochs, train_seeds=20, val_seeds=5):
         best_val_reward = float('-inf')
-        best_model_state = deepcopy(self.q_table)
+        best_model_state = deepcopy(self.state_dict())
 
         for epoch in range(epochs):
             self.train()
@@ -77,16 +77,14 @@ class REINFORCE(nn.Module):
                 readings = np.append(readings, speed)
                 terminated = False
                 truncated = False
-                total_reward = 0
-                offroad_count = 0
                 states, actions, rewards = [], [], []
 
                 while not (terminated or truncated):
                     state_tensor = torch.tensor(np.array([readings]), dtype=torch.float32).to(self.device)
                     with torch.no_grad():
                         probs = self.forward(state_tensor)
-                        dist = torch.distributions.Categorical(probs)
-                        action = dist.sample().item()
+                    dist = torch.distributions.Categorical(probs)
+                    action = dist.sample().item()
 
                     obs, reward, terminated, truncated, info = self.env.step(action)
 
@@ -112,7 +110,7 @@ class REINFORCE(nn.Module):
             val_reward = 0
             for seed in range(train_seeds, train_seeds+val_seeds):
 
-                obs, info = env.reset(seed=seed)
+                obs, info = self.env.reset(seed=seed)
                 readings = radar.get_radar_readings(obs, self.n_rays, self.len_ray) / self.len_ray
                 speed = self.env.unwrapped.car.hull.linearVelocity.length / self.MAX_SPEED
                 readings = np.append(readings, speed)
@@ -123,10 +121,9 @@ class REINFORCE(nn.Module):
                     state_tensor = torch.tensor(np.array([readings]), dtype=torch.float32).to(self.device)
                     with torch.no_grad():
                         probs = self.forward(state_tensor)
-                        dist = torch.distributions.Categorical(probs)
-                        action = dist.sample().item()
+                        action = probs.argmax().item()
 
-                    obs, reward, terminated, truncated, info = env.step(action)
+                    obs, reward, terminated, truncated, info = self.env.step(action)
                     readings = radar.get_radar_readings(obs, self.n_rays, self.len_ray) / self.len_ray
                     speed = self.env.unwrapped.car.hull.linearVelocity.length / self.MAX_SPEED
                     readings = np.append(readings, speed)
@@ -167,7 +164,6 @@ class REINFORCE(nn.Module):
             state_tensor = torch.tensor(np.array([readings]), dtype=torch.float32).to(self.device)
             with torch.no_grad():
                 probs = self.forward(state_tensor)
-                dist = torch.distributions.Categorical(probs)
                 action = probs.argmax().item()
 
             obs, reward, terminated, truncated, info = self.env.step(action)
