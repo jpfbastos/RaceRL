@@ -26,7 +26,7 @@ class ActorCritic(nn.Module):
         self.actor = nn.Linear(64, self.N_ACTIONS)
         self.critic = nn.Linear(64, 1)
         self.loss_fn = nn.MSELoss()
-        self.actor_optimizer = optim.Adam(self.parameters(), lr=self.lr)
+        self.optimizer = optim.Adam(self.parameters(), lr=self.lr)
         self.to(self.device)
         self.env = gym.make("CarRacing-v3", render_mode="rgb_array", domain_randomize=False, continuous=False)
 
