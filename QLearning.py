@@ -66,6 +66,7 @@ class QLearning:
         best_table = deepcopy(self.q_table)
         for epoch in range(n_epochs):
             train_reward = 0
+            # decay epsilon
             epsilon = max(self.min_epsilon, self.epsilon_decay ** epoch)
             for seed in range(train_seeds):
                 obs, info = self.env.reset(seed=seed)
@@ -148,7 +149,7 @@ class QLearning:
 
     def play(self, filename="q_table_final.pkl"):
         """
-        Plays a game of Q-learning on a saved Q-table.
+        Uses a saved Q-table to play a game of CarRacing.
 
         :param filename:
         :return:
@@ -156,20 +157,26 @@ class QLearning:
         with open(filename, "rb") as f:
             data = pickle.load(f)
             self.q_table = defaultdict(lambda: np.zeros(self.N_ACTIONS), data)
-        terminated = False
-        truncated = False
+
         obs, info = self.env.reset()
         readings = radar.get_radar_readings(obs, self.n_rays, self.len_ray)
         speed = self.env.unwrapped.car.hull.linearVelocity.length
         current_state = self.analog_to_idx(readings, speed)
+        terminated = False
+        truncated = False
+        total_reward = 0
+
         while not (terminated or truncated):
             action = np.argmax(self.q_table[current_state])
             obs, reward, terminated, truncated, info = self.env.step(action)
             readings = radar.get_radar_readings(obs, self.n_rays, self.len_ray)
             speed = self.env.unwrapped.car.hull.linearVelocity.length
+            total_reward += reward
             current_state = self.analog_to_idx(readings, speed)
             cv2.imshow("Game", obs)
             cv2.waitKey(1)
+
+        print(f"Total Reward: {total_reward:.2f}")
 
     def frac_used(self):
         with open("q_table_final.pkl", "rb") as f:
