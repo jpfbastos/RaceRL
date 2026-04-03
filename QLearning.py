@@ -205,7 +205,7 @@ class QLearning:
 
 if __name__ == "__main__":
     racing = QLearning()
-    racing.train(n_epochs=300)
+    racing.train(n_epochs=250)
     for _ in range(10):
         racing.play("q_table_final.pkl")
     racing.frac_used()
