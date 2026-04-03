@@ -6,7 +6,10 @@ I settled with CarRacing because a) I'm an avid motorsports fan! and b) because 
 
 I used 5 rays, resulting in the car knowing these distances:
 
-#### TODO IMG
+<p align="center">
+  <img src="imgs/radar.png" width="200" alt="Car and Radar Readings outlined on the Track"><br>
+  Car and Radar Readings outlined on the Track
+</p>
 
 Once this was set, it was a matter of applying different algorithms, comparing, and learning more about the exciting world of RL!
 
@@ -26,7 +29,9 @@ The solution to the problems highlighted above is to, instead of using a table, 
 
 To convert the Q-learning update rule into something usable by a neural net, we must use a loss function which resembles the Q-learning update rule. Since our goal is to minimise the update in the function $Q(s,a) = Q(s,a) + α[r + γ * max_{a'}(Q(s',a')) - Q(s,a)]$, this means we have to make the ($r + γ * max_{a'}(Q(s',a')) - Q(s,a)$) term as small as possible. This is done by making the reward plus the scaled max possible q-value for the next step, and the q-value for the current state/action pair equal to each other. Therefore, we employ the mean squared error of $r + γ * max_{a'}(Q(s',a'))$ and $Q(s,a)$.
 
-#### TODO IMGS
+<p align="center">
+  <img src="imgs/ql_dqn_train.png" width="500"><img src="imgs/ql_dqn_val.png" width="500">
+</p>
 
 The result is a much better performance in both training and validation as we now can use continuous inputs and can use extrapolate learnings from one state to the other states in a much easier way. 
 
@@ -40,6 +45,10 @@ To reduce the 2 causes of variance of DQN (highly correlated data fed in a row a
 
 2. Use a slower-updating target network to calculate our target q-values. Unlike the online network, which goes through a training step every step, the target network is frozen to the online network's weights at the end of the previous epoch. By only updating once an epoch (every 1000 steps), the online network can, for a whole epoch, have a consistent target to work towards, which produces less spikes.
 
+<p align="center">
+  <img src="imgs/dqn_rb_train.png" width="500"><img src="imgs/dqn_rb_val.png" width="500">
+</p>
+
 As we can see in the training (and to a lesser extent) in the validation rewards graphs, DQN with replay buffer and a target network tends to outperform outperforms regular DQN, and produces more stable results.
 
 ## On-Policy Algorithms
@@ -50,11 +59,17 @@ The main difference between REINFORCE and DQN is that REINFORCE is an on-policy 
 
 By sampling actions from its policy distribution, REINFORCE introduces significant variance in the updates, as learning is based on complete trajectories that may vary widely in quality. In contrast, DQN improves stability by using a replay buffer to decorrelate samples and a target network to stabilise the learning target.
 
-#### TODO imgs
+<p align="center">
+  <img src="imgs/dqn_reinf_train.png" width="500"><img src="imgs/dqn_reinf_val.png" width="500">
+</p>
 
-REINFORCE relies on sampling from its policy distribution, and as a result has high variance as each training run relies on a small amount of steps. DQN, on the other hand, uses a replay buffer and a target network to stabilise the learning target. Although this isn't immediately apparent in the reward curve comparison between these two algorithms, it is possible this is caused by the REINFORCE agent performs around 4x worse, so the difference scale might be responsible for this effect. Nevertheless, DQN clearly outperforms REINFORCE agent in this scenario .
+REINFORCE relies on sampling from its policy distribution, and as a result has high variance as each training run relies on a small amount of steps. DQN, on the other hand, uses a replay buffer and a target network to stabilise the learning target. Although this isn't immediately apparent in the reward curve comparison between these two algorithms, it is possible this is caused by the REINFORCE agent performs around 4x worse, so the difference scale might be responsible for this effect. Nevertheless, DQN clearly outperforms REINFORCE agent in this scenario.
 
 ### Actor-Critic Methods
+
+<p align="center">
+  <img src="imgs/a2c_ppo_train.png" width="500"><img src="imgs/a2c_ppo_val.png" width="500">
+</p>
 
 For both Actor-Critic methods explained here, I will not make comparisons or reference to graphs as, for both, the critic did not converge due to excess variance, so the actor never was able to understand what were "good actions" with regards to the environment. As seen, both graphs are mostly flat, and a good policy seems to appear by chance rather than by an incremental learning process. Nevertheless, I will explain both algorithms and propose solutions to this issue, which in the future I'll implement and compare.
 
