@@ -7,7 +7,7 @@ CAR_POSITION_YX = (70, 48)
 def is_offroad(pixel):
     return pixel[1] > 150 > pixel[2] and pixel[0] < 150
 
-def cast_pixel_ray(world, angle_rad, max_distance=70, step_size=2):
+def cast_pixel_ray(world, angle_rad, max_distance=70, step_size=2, display=False):
 
     for dist in range(0, max_distance, step_size):
         y = CAR_POSITION_YX[0] + int(np.sin(angle_rad) * dist)
@@ -19,16 +19,18 @@ def cast_pixel_ray(world, angle_rad, max_distance=70, step_size=2):
         pixel = world[y, x]
 
         if is_offroad(pixel):
-            # cv2.line(world, (CAR_POSITION_YX[1], CAR_POSITION_YX[0]), (x, y), color=(0, 0, 255), thickness=2)
-            # cv2.imshow("Game", world)
-            # cv2.waitKey(1)
+            if display:
+                cv2.line(world, (CAR_POSITION_YX[1], CAR_POSITION_YX[0]), (x, y), color=(0, 0, 255), thickness=2)
+                cv2.imshow("Game", world)
+                cv2.waitKey(1)
             return dist  # Hit something
 
-    #y = CAR_POSITION_YX[0] + int(np.sin(angle_rad) * max_distance)
-    #x = CAR_POSITION_YX[1] + int(np.cos(angle_rad) * max_distance)
-    #cv2.line(world, (CAR_POSITION_YX[1], CAR_POSITION_YX[0]), (x, y), color=(0, 0, 255), thickness=2)
-    #cv2.imshow("Game", world)
-    #cv2.waitKey(1)
+    if display:
+        y = CAR_POSITION_YX[0] + int(np.sin(angle_rad) * max_distance)
+        x = CAR_POSITION_YX[1] + int(np.cos(angle_rad) * max_distance)
+        cv2.line(world, (CAR_POSITION_YX[1], CAR_POSITION_YX[0]), (x, y), color=(0, 0, 255), thickness=2)
+        cv2.imshow("Game", world)
+        cv2.waitKey(1)
 
     return max_distance  # No hit
 
