@@ -30,7 +30,7 @@ class QNetwork(nn.Module):
         # are concerned, any speed above 70 can just be clipped to 70 to make sure we fit in the bucket
         self.MAX_SPEED = 70
         self.N_ACTIONS = 5 # nothing, right, left, gas, brake
-        self.fc1 = nn.Linear(self.n_rays+1, 64) # rays+sped
+        self.fc1 = nn.Linear(self.n_rays+1, 64) # rays+speed
         self.fc2 = nn.Linear(64, 64)
         self.fc3 = nn.Linear(64, self.N_ACTIONS)
         self.optimizer = optim.Adam(self.parameters(), lr=self.lr)
@@ -237,11 +237,15 @@ this means we have to make the (r + γ * max_a'(Q(s',a')) - Q(s,a)) term as smal
 the reward plus the scaled max possible q-value for the next step, and the q-value for the current state/action pair equal
 to each other. Therefore, we employ the mean squared error of r + γ * max_a'(Q(s',a')) and Q(s,a).
 
+The result is a much better performance in both training and validation as we now can use continuous inputs and can use 
+extrapolate learnings from one state to the other states in a much easier way. 
+
 However, now we have a moving target problem, in two ways. The first is that the future q-values, Q(s',a'), are produced
 by the same network as the one we are updating, resulting in approximating to a value which, under the same conditions,
 will no longer be the same as before the training step. Then, there is also the case of instability caused by high correlation 
 between examples. Neural nets assume that the data is independent and identically distributed. By feeding sequential data
 to the neural network, the updates will all be highly correlated, causing the training to have high variance as each race
 strongly swings the network to closely behave according to that track. It then becomes less suited for other tracks, and
-the process repeats, resulting in large spikes in the training reward.
+the process repeats, resulting in large spikes in the training reward. This causes the huge spikes in performance which 
+can be observed in both graphs.
 """
