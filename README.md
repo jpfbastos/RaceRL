@@ -80,3 +80,7 @@ $$L_{CLIP}=E[min(r_t(θ)A_t, clip(r_t(θ),1-ϵ,1+ϵ)A_t)], \ \text{ where } r_t(
 
 As for the issue with the critic not converging, something which I may implement in the future is using Generalized Advantage Estimation (GAE) instead of Monte Carlo (MC) to estimate the returns. MC uses the whole episode to be able to calculate the values for every time step. GAE, on the other hand, uses an exponential moving average of advantage estimates at different steps, which allows us to decrease variance (λ=0 for single step estimate) or decrease bias (λ=1, which is MC return). This usually tends to perform better in the context of PPO, but I wanted to use the regular MC returns first. 
 
+## Conclusion
+
+This has been a really enjoyable experience, and I have learned plenty about RL through this - the main thing being how important it is to include stability mechanisms to ensure the learning process is successful in practice. The plain algorithms were good to build intuition, but more advanced techniques (such as replay buffer, target network, potentially GAN) are required to achieve reliable performance. For the future, I plan on working towards extending the Actor-Critic Methods to improve stability, and compare different number of rays, along with discrete vs continuous actions.
+
