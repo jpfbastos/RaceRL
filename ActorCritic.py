@@ -229,15 +229,16 @@ assigning high probabilities to high-reward actions and low probabilities to low
 the role of the neural nets we have been training so far. The new element is the introduction of the critic, is tasked
 with predicting the cumulative reward we can expect given a specific state. It can then provide a baseline to the actor, 
 from which we can calculate whether the actor's actions outperformed the baseline (good) or if they were suboptimal.
-This gap is called the "Advantage". The actor uses the advantage to decide whether to increase or decrease the 
-log-likelihood of a certain action given some state.
+This gap is called the "Advantage", calculated as A_t=r_t+γV(s_{t+1})−V(s_t). The actor uses the advantage to decide 
+whether to increase or decrease the log-likelihood of a certain action given some state.
 
 The explanation above goes through how the A2C algorithm essentially works. Each step the agent takes is followed by a 
-training step to the actor/critic networks, which can introduce the high variance problems explained during DQN. As a 
-result, the critic was not able to converge on establishing an accurate action-value approximation, which meant that
-even if the actor had a very small loss, it is optimising a wrong estimate, so the actions won't produce good results
-from the environment's perspective.
+training step to the actor/critic networks, which can introduce the bootstrapping/moving target problems explained 
+during DQN, . As a result, the critic was not able to converge on establishing an accurate action-value approximation, 
+which meant that even if the actor had a very small loss, it is optimising a wrong estimate, so the actions won't 
+produce good results from the environment's perspective.
 
-A potential solution for this is to use n-step returns rather than 1-step returns, which would allow for less darting 
-around, and for the ability to normalise rewards and advantages in a sample, which also stabilises training.  
+A potential solution for this is to use n-step returns rather than 1-step returns, as it reduces the bias of 1-step TD 
+and produces smoother targets. Additionally, batch training would reduce correlation between samples, and cancel out any noise 
+arising from a single step, and allows to normalise rewards and advantages in a sample, which also stabilises training.
 """

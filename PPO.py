@@ -305,11 +305,14 @@ is still very similar - actor maximises log probability of good advantages and m
 critic aims to approximate the true value function of the environment. However, the differences lie in how it handles
 the data to process.
 
-A2C exhibits high-variance by updating every step, whereas PPO uses multiple episodes, each of which contains 1000 steps
-for each training run. This will mean that the effect of any spike in the gradients will be diminished by the rest of 
-the data providing sensible gradient updates. Then, PPO clips the objective, which further reduces this effect and keeps
-the policy from drifting too much. Since we have this guardrail, we can train on the same data multiple times without 
-worrying about an excessive recency bias which may arise.
+A2C exhibits instability by updating every step, which results in highly correlated and noisy batches. PPO uses multiple
+trajectories for each training run. This will mean that the effect of any spike in the gradients will be diminished by 
+the rest of the data providing sensible gradient updates. Then, PPO clips the objective, which further reduces this 
+effect and keeps the policy from drifting too much. Since we have this stability guardrail, we can train on the same 
+data multiple times without worrying about an excessive recency bias which may arise.
+
+The loss equation for the actor becomes: L_{CLIP}=E[min(r_t(θ)A_t, clip(r_t(θ),1−ϵ,1+ϵ)A_t)], where 
+r_t(θ) = π_θ(a_t|s_t) / π_old(a_t|s_t) 
 
 As for the issue with the critic not converging, something which I may implement in the future is using Generalized 
 Advantage Estimation (GAE) instead of Monte Carlo (MC) to estimate the returns. MC uses the whole episode to be able to 
