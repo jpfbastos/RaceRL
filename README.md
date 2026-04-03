@@ -6,7 +6,7 @@ I settled with CarRacing because a) I'm an avid motorsports fan! and b) because 
 
 I used 5 rays, resulting in the car knowing these distances:
 
-## TODO IMG
+#### TODO IMG
 
 Once this was set, it was a matter of applying different algorithms, comparing, and learning more about the exciting world of RL!
 
@@ -26,7 +26,7 @@ The solution to the problems highlighted above is to, instead of using a table, 
 
 To convert the Q-learning update rule into something usable by a neural net, we must use a loss function which resembles the Q-learning update rule. Since our goal is to minimise the update in the function $Q(s,a) = Q(s,a) + α[r + γ * max_{a'}(Q(s',a')) - Q(s,a)]$, this means we have to make the ($r + γ * max_{a'}(Q(s',a')) - Q(s,a)$) term as small as possible. This is done by making the reward plus the scaled max possible q-value for the next step, and the q-value for the current state/action pair equal to each other. Therefore, we employ the mean squared error of $r + γ * max_{a'}(Q(s',a'))$ and $Q(s,a)$.
 
-## TODO IMGS
+#### TODO IMGS
 
 The result is a much better performance in both training and validation as we now can use continuous inputs and can use extrapolate learnings from one state to the other states in a much easier way. 
 
@@ -44,7 +44,39 @@ As we can see in the training (and to a lesser extent) in the validation rewards
 
 ## On-Policy Algorithms
 
+### REINFORCE
+
+The main difference between REINFORCE and DQN is that REINFORCE is an on-policy algorithm vs DQN which is off-policy. This means that REINFORCE is updated using data generated from the current policy, which is unlike DQN, which learned from data generated from a ε-greedy policy to ensure the agent was exploring. A small alteration I performed during validation is that for on-policy algorithms I use the action with the highest probability instead of sampling the distribution, but this allows me to observe how confident the agent is in its decisions, although deviating slightly from the true on-policy learning.
+
+By sampling actions from its policy distribution, REINFORCE introduces significant variance in the updates, as learning is based on complete trajectories that may vary widely in quality. In contrast, DQN improves stability by using a replay buffer to decorrelate samples and a target network to stabilise the learning target.
+
+#### TODO imgs
+
+REINFORCE relies on sampling from its policy distribution, and as a result has high variance as each training run relies on a small amount of steps. DQN, on the other hand, uses a replay buffer and a target network to stabilise the learning target. Although this isn't immediately apparent in the reward curve comparison between these two algorithms, it is possible this is caused by the REINFORCE agent performs around 4x worse, so the difference scale might be responsible for this effect. Nevertheless, DQN clearly outperforms REINFORCE agent in this scenario .
+
+### Actor-Critic Methods
+
+For both Actor-Critic methods explained here, I will not make comparisons or reference to graphs as, for both, the critic did not converge due to excess variance, so the actor never was able to understand what were "good actions" with regards to the environment. As seen, both graphs are mostly flat, and a good policy seems to appear by chance rather than by an incremental learning process. Nevertheless, I will explain both algorithms and propose solutions to this issue, which in the future I'll implement and compare.
+
+Actor-Critic methods work by training two neural nets, instead of one. The first one, the actor, has the task of assigning high probabilities to high-reward actions and low probabilities to low-reward actions. This corresponds to the role of the neural nets we have been training so far. The new element is the introduction of the critic, is tasked with predicting the cumulative reward we can expect given a specific state. It can then provide a baseline to the actor, from which we can calculate whether the actor's actions outperformed the baseline (good) or if they were suboptimal. This gap is called the "Advantage", calculated as $A_t=r_t+γV(s_{t+1})−V(s_t)$. The actor uses the advantage to decide whether to increase or decrease the 
+log-likelihood of a certain action given some state.
 
 
+#### Advantage Actor-Critic (A2C)
 
+The explanation above goes through how the A2C algorithm essentially works. Each step the agent takes is followed by a training step to the actor/critic networks, which can introduce the bootstrapping/moving target problems explained during DQN. As a result, the critic was not able to converge on establishing an accurate action-value approximation, which meant that even if the actor had a very small loss, it is optimising a wrong estimate, so the actions won't produce good results from the environment's perspective.
+
+A potential solution for this is to use n-step returns rather than 1-step returns, as it reduces the bias of 1-step TD and produces smoother targets. Additionally, batch training would reduce correlation between samples, and cancel out any noise arising from a single step, and allows to normalise rewards and advantages in a sample, which also stabilises training.
+
+#### Proximal Policy Optimisation (PPO)
+
+PPO aims to solve A2C's large gradients/updates problem through a few strategies. In terms of loss functions, the idea is still very similar - actor maximises log probability of good advantages and minimises those of bad advantages, critic aims to approximate the true value function of the environment. However, the differences lie in how it handles the data to process.
+
+A2C exhibits instability by updating every step, which results in highly correlated and noisy batches. PPO uses multiple trajectories for each training run. This will mean that the effect of any spike in the gradients will be diminished by the rest of the data providing sensible gradient updates. Then, PPO clips the objective, which further reduces this effect and keeps the policy from drifting too much. Since we have this stability guardrail, we can train on the same data multiple times without worrying about an excessive recency bias which may arise.
+
+The loss equation for the actor becomes: 
+
+$$L_{CLIP}=E[min(r_t(θ)A_t, clip(r_t(θ),1-ϵ,1+ϵ)A_t)], \ \text{ where } r_t(θ) = \frac{π_θ(a_t|s_t)}{π_{old}(a_t|s_t)}$$
+
+As for the issue with the critic not converging, something which I may implement in the future is using Generalized Advantage Estimation (GAE) instead of Monte Carlo (MC) to estimate the returns. MC uses the whole episode to be able to calculate the values for every time step. GAE, on the other hand, uses an exponential moving average of advantage estimates at different steps, which allows us to decrease variance (λ=0 for single step estimate) or decrease bias (λ=1, which is MC return). This usually tends to perform better in the context of PPO, but I wanted to use the regular MC returns first. 
 
