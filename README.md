@@ -1,5 +1,10 @@
 # RaceRL - an exploration of multiple Reinforcement Learning algorithms in Gymnasium's `CarRacing-v3` environment
 
+<p align="center">
+  <img src="imgs/car_racing_play.gif" width=300 alt="Description of the animation"><br>
+  Trained DQN Agent in CarRacing-v3 Environment
+</p>
+
 Over the past months, I have become increasnigly interested in reinforcement learning (RL) and how it can solve many different tasks just by receiving feedback from a pre-determined environment. Curious to explore, I wanted to give a shot at implementing different RL algorithms to understand the strenghts and weaknesses of each, and develop a strong understanding of concepts and best practices through having to produce these algorithms. 
 
 I settled with CarRacing because a) I'm an avid motorsports fan! and b) because I could use a simple radar rather than the image pixels for training data. Many implementations (and DeepMind's Atari with Reinforcement Learning paper) use the pixels in the image produced by the environment to feed the agent so it can "see", much like we do, what is going on in the game and adapt. However, I wanted to have as small of a non-RL pipeline as possible so I could focus on the RL side of things. Therefore, I used a radar which would calculate the radial distances from the car to the edge of the track in several directions as the main orientation mechanism for the agent, along with the speed so the car knew when to brake. This would allow for the car to know, for example, that the left wall was closer than the right wall, so it should move right. 
