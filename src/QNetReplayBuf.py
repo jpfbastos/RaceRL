@@ -1,11 +1,10 @@
 import torch
-import radar_wrapper as radar
+from src.utils import radar_wrapper as radar
 import numpy as np
 import cv2
-from ReplayBuffer import ReplayBuffer
-from QNetwork import QNetwork
+from src.utils.ReplayBuffer import ReplayBuffer
+from src.QNetwork import QNetwork
 from copy import deepcopy
-from torch.backends.mps import is_available
 
 
 class QNetReplayBuf(QNetwork):
@@ -147,9 +146,9 @@ class QNetReplayBuf(QNetwork):
                 best_model_state = deepcopy(self.state_dict())
 
             if epoch % 20 == 0 and best_model_state:
-                torch.save(best_model_state, 'qnetwork_replay.pt')
+                torch.save(best_model_state, '../models/qnetwork_replay.pt')
 
-        torch.save(best_model_state, 'qnetwork_replay_final.pt')
+        torch.save(best_model_state, '../models/qnetwork_replay_final.pt')
 
 
 if __name__ == "__main__":
@@ -157,23 +156,4 @@ if __name__ == "__main__":
     racing = QNetReplayBuf()
     racing.train_agent(n_epochs=250)
     for _ in range(10):
-        racing.play(filename="qnetwork_replay_final.pt")
-
-"""
-To reduce the 2 causes of variance of DQN (highly correlated data fed in a row and moving target), we can employ two 
-solutions:
-
-1. Use a replay buffer to store transitions (s, a, r, s'), and sample from that buffer. By making the buffer size much 
-larger than what a single episode (race) can collect, we can fetch random steps in minibatches from a collection of 
-trajectories and from varying moments within each trajectory. This ensures that in a short time span, the network 
-is exposed to many different scenarios, which approximates the i.i.d. assumption that neural networks have.
-Practically, this prevents the network constantly overfitting against the most recent track it has seen.
-
-2. Use a slower-updating target network to calculate our target q-values. Unlike the online network, which goes through 
-a training step every step, the target network is frozen to the online network's weights at the end of the previous epoch.
-By only updating once an epoch (every 1000 steps), the online network can, for a whole epoch, have a consistent target 
-to work towards, which produces less spikes.
-
-As we can see in the training (and to a lesser extent) in the validation rewards graphs, DQN with replay buffer and 
-a target network tends to outperform outperforms regular DQN, and produces more stable results.
-"""
+        racing.play(filename="../models/qnetwork_replay_final.pt")

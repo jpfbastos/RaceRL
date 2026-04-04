@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import gymnasium as gym
-import radar_wrapper as radar
+from src.utils import radar_wrapper as radar
 import numpy as np
 import cv2
 from copy import deepcopy
@@ -180,11 +180,11 @@ class QNetwork(nn.Module):
                 best_model_state = deepcopy(self.state_dict())
 
             if epoch % 20 == 0:
-                torch.save(best_model_state, 'qnetwork.pt')
+                torch.save(best_model_state, '../models/qnetwork.pt')
 
-        torch.save(best_model_state, 'qnetwork_final.pt')
+        torch.save(best_model_state, '../models/qnetwork_final.pt')
 
-    def play(self, filename="qnetwork_final.pt"):
+    def play(self, filename="../models/qnetwork_final.pt"):
         """
         Uses a saved Q-network to play a game of CarRacing.
 
@@ -225,27 +225,3 @@ if __name__ == "__main__":
     racing.train_agent(n_epochs=250)
     for _ in range(10):
         racing.play()
-
-"""
-The solution to the problems highlighted above is to, instead of using a table, approximating the Q-function using a 
-neural network, a.k.a. Deep-Q Learning (DQN). By using a neural net instead of a table, the agent can generalise better, 
-since it can combine knowledge from different episodes to form a higher-level understanding of the environment it is in.
-
-To convert the Q-learning update rule into something usable by a neural net, we must use a loss function which resembles
-the Q-learning update rule. Since our goal is to minimise the update in the function Q(s,a) = Q(s,a) + α[r + γ * max_a'(Q(s',a')) - Q(s,a)],
-this means we have to make the (r + γ * max_a'(Q(s',a')) - Q(s,a)) term as small as possible. This is done by making
-the reward plus the scaled max possible q-value for the next step, and the q-value for the current state/action pair equal
-to each other. Therefore, we employ the mean squared error of r + γ * max_a'(Q(s',a')) and Q(s,a).
-
-The result is a much better performance in both training and validation as we now can use continuous inputs and can use 
-extrapolate learnings from one state to the other states in a much easier way. 
-
-However, now we have a moving target problem, in two ways. The first is that the future q-values, Q(s',a'), are produced
-by the same network as the one we are updating, resulting in approximating to a value which, under the same conditions,
-will no longer be the same as before the training step. Then, there is also the case of instability caused by high correlation 
-between examples. Neural nets assume that the data is independent and identically distributed. By feeding sequential data
-to the neural network, the updates will all be highly correlated, causing the training to have high variance as each race
-strongly swings the network to closely behave according to that track. It then becomes less suited for other tracks, and
-the process repeats, resulting in large spikes in the training reward. This causes the huge spikes in performance which 
-can be observed in both graphs.
-"""

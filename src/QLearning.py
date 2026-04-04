@@ -1,6 +1,6 @@
 import numpy as np
 import gymnasium as gym
-import radar_wrapper as radar
+from src.utils import radar_wrapper as radar
 import cv2
 from collections import defaultdict
 import pickle
@@ -141,13 +141,13 @@ class QLearning:
                 best_table = deepcopy(self.q_table)
 
             if epoch % 20 == 0:
-                with open("q_table.pkl", "wb") as f:
+                with open("../models/q_table.pkl", "wb") as f:
                     pickle.dump(dict(best_table), f)
 
-        with open("q_table_final.pkl", "wb") as f:
+        with open("../models/q_table_final.pkl", "wb") as f:
             pickle.dump(dict(best_table), f)
 
-    def play(self, filename="q_table_final.pkl"):
+    def play(self, filename="../models/q_table_final.pkl"):
         """
         Uses a saved Q-table to play a game of CarRacing.
 
@@ -179,7 +179,7 @@ class QLearning:
         print(f"Total Reward: {total_reward:.2f}")
 
     def frac_used(self):
-        with open("q_table_final.pkl", "rb") as f:
+        with open("../models/q_table_final.pkl", "rb") as f:
             data = pickle.load(f)
             self.q_table = defaultdict(lambda: np.zeros(self.N_ACTIONS), data)
 
@@ -207,18 +207,5 @@ if __name__ == "__main__":
     racing = QLearning()
     racing.train(n_epochs=250)
     for _ in range(10):
-        racing.play("q_table_final.pkl")
+        racing.play()
     racing.frac_used()
-
-"""
-Having too few buckets reduces granularity of data, whereas having too many buckets makes the data sparse, meaning the 
-q-values are dictated by only a few sample points (curse of dimensionality). We save values in a dictionary, but if we 
-were to save them in a table, we'd only use 29.63% of entries (where the size of each dimension is zero to the largest 
-numbered bucket observed - buckets not in the data are not counted, so if using all buckets in truth this percentage
-would be even lower). 
-
-Since entries on the table are independent, it is hard to extrapolate any trends between each entry. This results in
-the model not being able to generalise behaviour across the policy (e.g. if next to left wall turn right) because it
-would have to reach that conclusion in all other ray/speed combinations until it becomes a general rule. Therefore, 
-we see a highly oscillating pattern as readings transition from one set of bucket to the next while moving.
-"""

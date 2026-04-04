@@ -2,11 +2,11 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import gymnasium as gym
-import radar_wrapper as radar
+from src.utils import radar_wrapper as radar
 import numpy as np
 import cv2
 from copy import deepcopy
-from ac_nets import ActorNet, CriticNet
+from src.utils.ac_nets import ActorNet, CriticNet
 
 class PPO:
     def __init__(self, device=torch.device('cpu'), n_rays=5, len_ray=70, lr=3e-4, gamma=0.99, epsilon=0.2, K = 4, batch_size = 256):
@@ -250,13 +250,13 @@ class PPO:
                 best_critic_state = deepcopy(self.critic.state_dict())
 
             if epoch % 20 == 0 and best_actor_state is not None:
-                torch.save(best_actor_state, 'ppo_actor.pt')
-                torch.save(best_critic_state, 'ppo_critic.pt')
+                torch.save(best_actor_state, '../models/ppo_actor.pt')
+                torch.save(best_critic_state, '../models/ppo_critic.pt')
 
-        torch.save(best_actor_state, 'ppo_actor_final.pt')
-        torch.save(best_critic_state, 'ppo_critic_final.pt')
+        torch.save(best_actor_state, '../models/ppo_actor_final.pt')
+        torch.save(best_critic_state, '../models/ppo_critic_final.pt')
 
-    def play(self, actor_filename='ppo_actor_final.pt', critic_filename='ppo_critic_final.pt'):
+    def play(self, actor_filename='../models/ppo_actor_final.pt', critic_filename='../models/ppo_critic_final.pt'):
         """
         Uses saved PPO Actor and Critic models to play a game of CarRacing.
 
@@ -298,26 +298,3 @@ if __name__ == "__main__":
     racing.train_agent(n_epochs=250)
     for _ in range(10):
         racing.play()
-
-"""
-PPO aims to solve A2C's large gradients/updates problem through a few strategies. In terms of loss functions, the idea
-is still very similar - actor maximises log probability of good advantages and minimises those of bad advantages, 
-critic aims to approximate the true value function of the environment. However, the differences lie in how it handles
-the data to process.
-
-A2C exhibits instability by updating every step, which results in highly correlated and noisy batches. PPO uses multiple
-trajectories for each training run. This will mean that the effect of any spike in the gradients will be diminished by 
-the rest of the data providing sensible gradient updates. Then, PPO clips the objective, which further reduces this 
-effect and keeps the policy from drifting too much. Since we have this stability guardrail, we can train on the same 
-data multiple times without worrying about an excessive recency bias which may arise.
-
-The loss equation for the actor becomes: L_{CLIP}=E[min(r_t(θ)A_t, clip(r_t(θ),1−ϵ,1+ϵ)A_t)], where 
-r_t(θ) = π_θ(a_t|s_t) / π_old(a_t|s_t) 
-
-As for the issue with the critic not converging, something which I may implement in the future is using Generalized 
-Advantage Estimation (GAE) instead of Monte Carlo (MC) to estimate the returns. MC uses the whole episode to be able to 
-calculate the values for every time step. GAE, on the other hand, uses an exponential moving average of advantage 
-estimates at different steps, which allows us to decrease variance (λ=0 for single step estimate) or decrease bias (λ=1, 
-which is MC return). This usually tends to perform better in the context of PPO, but I wanted to use the regular MC 
-returns first.  
-"""

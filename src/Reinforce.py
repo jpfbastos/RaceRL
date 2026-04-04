@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import gymnasium as gym
-import radar_wrapper as radar
+from src.utils import radar_wrapper as radar
 import numpy as np
 import cv2
 from copy import deepcopy
@@ -179,11 +179,11 @@ class REINFORCE(nn.Module):
 
             # save game
             if epoch % 20 == 0:
-                torch.save(best_model_state, 'reinforce.pt')
+                torch.save(best_model_state, '../models/reinforce.pt')
 
-        torch.save(best_model_state, 'reinforce_final.pt')
+        torch.save(best_model_state, '../models/reinforce_final.pt')
 
-    def play(self, filename="reinforce_final.pt"):
+    def play(self, filename="../models/reinforce_final.pt"):
         """
         Uses a saved REINFORCE model to play a game of CarRacing.
 
@@ -224,22 +224,3 @@ if __name__ == "__main__":
     racing.train_agent(n_epochs=250)
     for _ in range(10):
         racing.play()
-
-"""
-The main difference between REINFORCE and DQN is that REINFORCE is an on-policy algorithm vs DQN which is off-policy.
-This means that REINFORCE is updated using data generated from the current policy, which is unlike DQN, which learned 
-from data generated from a ε-greedy policy to ensure the agent was exploring. A small alteration I performed during 
-validation is that for on-policy algorithms I use the action with the highest probability instead of sampling the 
-distribution, but this allows me to observe how confident the agent is in its decisions, although deviating slightly 
-from the true on-policy learning.
-
-By sampling actions from its policy distribution, REINFORCE introduces significant variance in the updates,
- as learning is based on complete trajectories that may vary widely in quality. In contrast, DQN improves stability by
-using a replay buffer to decorrelate samples and a target network to stabilise the learning target.
-
-REINFORCE relies on sampling from its policy distribution, and as a result has high variance as each training run relies 
-on a small amount of steps. DQN, on the other hand, uses a replay buffer and a target network to stabilise the learning 
-target. Although this isn't immediately apparent in the reward curve comparison between these two algorithms, it is 
-possible this is caused by the REINFORCE agent performs around 4x worse, so the difference scale might be responsible
-for this effect. Nevertheless, DQN clearly outperforms REINFORCE agent.
-"""
